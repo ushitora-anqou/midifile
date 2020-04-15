@@ -63,6 +63,19 @@ function MIDIFile(buffer, strictMode) {
       // Updating index to the track end
       curIndex += track.getTrackLength() + 8;
     }
+    if (curIndex !== buffer.byteLength) {
+      for (;;) {
+        try {
+          // Creating the track object
+          track = new MIDIFileTrack(buffer, curIndex, strictMode);
+          this.tracks.push(track);
+          // Updating index to the track end
+          curIndex += track.getTrackLength() + 8;
+        } catch (e) {
+          break;
+        }
+      }
+    }
     // Testing integrity : curIndex should be at the end of the buffer
     if (strictMode && curIndex !== buffer.byteLength) {
       throw new Error('It seems that the buffer contains too much datas.');
@@ -72,11 +85,9 @@ function MIDIFile(buffer, strictMode) {
 
 // Events reading helpers
 MIDIFile.prototype.getEvents = function(type, subtype) {
-  var events;
   var event;
   var playTime = 0;
   var filteredEvents = [];
-  var format = this.header.getFormat();
   var tickResolution = this.header.getTickResolution();
   var i;
   var j;
@@ -84,100 +95,66 @@ MIDIFile.prototype.getEvents = function(type, subtype) {
   var smallestDelta;
 
   // Reading events
-  // if the read is sequential
-  if (1 !== format || 1 === this.tracks.length) {
-    for (i = 0, j = this.tracks.length; i < j; i++) {
-      // reset playtime if format is 2
-      playTime = 2 === format && playTime ? playTime : 0;
-      events = MIDIEvents.createParser(
-        this.tracks[i].getTrackContent(),
-        0,
-        false
-      );
-      // loooping through events
-      event = events.next();
-      while (event) {
-        playTime += event.delta ? event.delta * tickResolution / 1000 : 0;
-        if (event.type === MIDIEvents.EVENT_META) {
-          // tempo change events
-          if (event.subtype === MIDIEvents.EVENT_META_SET_TEMPO) {
-            tickResolution = this.header.getTickResolution(event.tempo);
-          }
-        }
-        // push the asked events
-        if (
-          (!type || event.type === type) &&
-          (!subtype || (event.subtype && event.subtype === subtype))
-        ) {
-          event.playTime = playTime;
-          filteredEvents.push(event);
-        }
-        event = events.next();
-      }
-    }
-    // the read is concurrent
-  } else {
-    trackParsers = [];
-    smallestDelta = -1;
+  trackParsers = [];
+  smallestDelta = -1;
 
-    // Creating parsers
-    for (i = 0, j = this.tracks.length; i < j; i++) {
-      trackParsers[i] = {};
-      trackParsers[i].parser = MIDIEvents.createParser(
-        this.tracks[i].getTrackContent(),
-        0,
-        false
-      );
-      trackParsers[i].curEvent = trackParsers[i].parser.next();
-    }
-    // Filling events
-    do {
-      smallestDelta = -1;
-      // finding the smallest event
-      for (i = 0, j = trackParsers.length; i < j; i++) {
-        if (trackParsers[i].curEvent) {
-          if (
-            -1 === smallestDelta ||
-            trackParsers[i].curEvent.delta <
-              trackParsers[smallestDelta].curEvent.delta
-          ) {
-            smallestDelta = i;
-          }
-        }
-      }
-      if (-1 !== smallestDelta) {
-        // removing the delta of previous events
-        for (i = 0, j = trackParsers.length; i < j; i++) {
-          if (i !== smallestDelta && trackParsers[i].curEvent) {
-            trackParsers[i].curEvent.delta -=
-              trackParsers[smallestDelta].curEvent.delta;
-          }
-        }
-        // filling values
-        event = trackParsers[smallestDelta].curEvent;
-        playTime += event.delta ? event.delta * tickResolution / 1000 : 0;
-        if (event.type === MIDIEvents.EVENT_META) {
-          // tempo change events
-          if (event.subtype === MIDIEvents.EVENT_META_SET_TEMPO) {
-            tickResolution = this.header.getTickResolution(event.tempo);
-          }
-        }
-        // push midi events
-        if (
-          (!type || event.type === type) &&
-          (!subtype || (event.subtype && event.subtype === subtype))
-        ) {
-          event.playTime = playTime;
-          event.track = smallestDelta;
-          filteredEvents.push(event);
-        }
-        // getting next event
-        trackParsers[smallestDelta].curEvent = trackParsers[
-          smallestDelta
-        ].parser.next();
-      }
-    } while (-1 !== smallestDelta);
+  // Creating parsers
+  for (i = 0, j = this.tracks.length; i < j; i++) {
+    trackParsers[i] = {};
+    trackParsers[i].parser = MIDIEvents.createParser(
+      this.tracks[i].getTrackContent(),
+      0,
+      false
+    );
+    trackParsers[i].curEvent = trackParsers[i].parser.next();
   }
+  // Filling events
+  do {
+    smallestDelta = -1;
+    // finding the smallest event
+    for (i = 0, j = trackParsers.length; i < j; i++) {
+      if (trackParsers[i].curEvent) {
+        if (
+          -1 === smallestDelta ||
+          trackParsers[i].curEvent.delta <
+            trackParsers[smallestDelta].curEvent.delta
+        ) {
+          smallestDelta = i;
+        }
+      }
+    }
+    if (-1 !== smallestDelta) {
+      // removing the delta of previous events
+      for (i = 0, j = trackParsers.length; i < j; i++) {
+        if (i !== smallestDelta && trackParsers[i].curEvent) {
+          trackParsers[i].curEvent.delta -=
+            trackParsers[smallestDelta].curEvent.delta;
+        }
+      }
+      // filling values
+      event = trackParsers[smallestDelta].curEvent;
+      playTime += event.delta ? event.delta * tickResolution / 1000 : 0;
+      if (event.type === MIDIEvents.EVENT_META) {
+        // tempo change events
+        if (event.subtype === MIDIEvents.EVENT_META_SET_TEMPO) {
+          tickResolution = this.header.getTickResolution(event.tempo);
+        }
+      }
+      // push midi events
+      if (
+        (!type || event.type === type) &&
+        (!subtype || (event.subtype && event.subtype === subtype))
+      ) {
+        event.playTime = playTime;
+        event.track = smallestDelta;
+        filteredEvents.push(event);
+      }
+      // getting next event
+      trackParsers[smallestDelta].curEvent = trackParsers[
+        smallestDelta
+      ].parser.next();
+    }
+  } while (-1 !== smallestDelta);
   return filteredEvents;
 };
 

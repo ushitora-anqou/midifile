@@ -48,6 +48,19 @@ function MIDIFileTrack(buffer, start) {
         'T' === String.fromCharCode(this.datas.getUint8(1)) &&
         'r' === String.fromCharCode(this.datas.getUint8(2)) &&
         'k' === String.fromCharCode(this.datas.getUint8(3))
+      ) &&
+      // YAMAHA XF Format
+      !(
+        'X' === String.fromCharCode(this.datas.getUint8(0)) &&
+        'F' === String.fromCharCode(this.datas.getUint8(1)) &&
+        'I' === String.fromCharCode(this.datas.getUint8(2)) &&
+        'H' === String.fromCharCode(this.datas.getUint8(3))
+      ) &&
+      !(
+        'X' === String.fromCharCode(this.datas.getUint8(0)) &&
+        'F' === String.fromCharCode(this.datas.getUint8(1)) &&
+        'K' === String.fromCharCode(this.datas.getUint8(2)) &&
+        'M' === String.fromCharCode(this.datas.getUint8(3))
       )
     ) {
       throw new Error(
